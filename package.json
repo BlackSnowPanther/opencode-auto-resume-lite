@@ -1,0 +1,48 @@
+{
+  "name": "opencode-auto-resume-lite",
+  "version": "1.0.0",
+  "description": "Minimal, dependency-free auto-resume watchdog for OpenCode: detects stalled sessions and sends a continue prompt automatically.",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BlackSnowPanther/opencode-auto-resume-lite.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BlackSnowPanther/opencode-auto-resume-lite/issues"
+  },
+  "homepage": "https://github.com/BlackSnowPanther/opencode-auto-resume-lite#readme",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "auto-resume",
+    "stall-detection",
+    "watchdog"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.19.5",
+    "@opencode-ai/sdk": "^1.19.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  },
+  "files": [
+    "dist",
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ]
+}
