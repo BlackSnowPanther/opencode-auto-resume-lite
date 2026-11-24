@@ -6,6 +6,6 @@
  *
  * No subscriptions, no external dependencies, fully open source.
  */
-import type { Plugin } from "@opencode-ai/plugin";
-declare const autoResumePlugin: Plugin;
-export default autoResumePlugin;
+import { Plugin } from "@opencode/plugin";
+declare const _default: Plugin.Plugin;
+export default _default;
