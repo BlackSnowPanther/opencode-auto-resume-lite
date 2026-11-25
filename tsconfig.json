@@ -11,11 +11,7 @@
     "resolveJsonModule": true,
     "lib": ["ES2022"],
     "rootDir": ".",
-    "baseUrl": ".",
-    "paths": {
-      "@opencode-ai/plugin": ["../../node_modules/@opencode-ai/plugin"],
-      "@opencode-ai/sdk": ["../../node_modules/@opencode-ai/sdk"]
-    }
+    "baseUrl": "."
   },
   "include": ["index.ts"],
   "exclude": ["node_modules", "dist"]
