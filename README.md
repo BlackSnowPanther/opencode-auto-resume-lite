@@ -1,12 +1,13 @@
 # opencode-auto-resume-lite
 
-A minimal, dependency-free **auto-resume watchdog** for [OpenCode](https://opencode.ai).
+A minimal, dependency-free **auto-resume watchdog** for [OpenCode](https://opencode.ai) **V2**.
 
-When a model stalls mid-response — a dropped stream, a silent provider timeout, a hung tool call — OpenCode just sits there until you type "continue" yourself. This plugin watches busy sessions and sends a continuation prompt automatically.
+When a model stalls mid-response — a dropped stream, a silent provider timeout, a rate-limit, a hung tool call — OpenCode just sits there until you type "continue" yourself. This plugin watches sessions and resumes them automatically, **and keeps trying indefinitely** instead of giving up after a fixed number of attempts.
 
 - **No subscriptions, no accounts, no telemetry**
-- **~200 lines of TypeScript**, MIT licensed
-- **No runtime dependencies** beyond the OpenCode SDK/plugin types
+- **Single file of TypeScript**, MIT licensed
+- **No runtime dependencies** beyond `@opencode/plugin`
+- **Never permanently gives up** — per-burst budget with a growing cooldown
 - **Tunable** down to a few seconds
 
 ## Install
@@ -20,7 +21,7 @@ npm install
 npm run build
 ```
 
-Then reference the local package in `~/.config/opencode/opencode.jsonc` (or `opencode.json`):
+Then reference the local package in `opencode.jsonc` (project) or `~/.config/opencode/opencode.jsonc` (global):
 
 ```jsonc
 {
@@ -28,59 +29,70 @@ Then reference the local package in `~/.config/opencode/opencode.jsonc` (or `ope
     {
       "package": "file:///absolute/path/to/opencode-auto-resume-lite",
       "options": {
-        "timeoutMs": 30000,
-        "checkIntervalMs": 2000,
-        "maxRetries": 5,
-        "debug": true
+        "stallMs": 120000,
+        "maxNudges": 4,
+        "cooldownMs": 60000,
+        "maxCooldownMs": 1800000,
+        "failureGraceMs": 3000,
+        "debug": false
       }
     }
   ]
 }
 ```
 
-Restart OpenCode after changing plugins or option values.
+All options are optional; the defaults above are what ship.
 
 ## Options
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `timeoutMs` | number | `60000` | How long a session may sit `busy` with no activity before it is treated as stalled. |
-| `checkIntervalMs` | number | `10000` | How often the watchdog polls OpenCode for session status. |
-| `maxRetries` | number | `5` | Maximum continue prompts sent for one stall episode. Resets when the session goes idle. |
-| `continuePrompt` | string | see below | Text sent to resume the session. |
-| `debug` | boolean | `false` | Log every status transition and stall decision. |
+| `stallMs` | number | `120000` | How long a session may be `busy` with no activity before it is treated as stalled. |
+| `checkEveryMs` | number | `8000` | How often the watchdog re-checks its per-session state. |
+| `maxNudges` | number | `4` | Resume attempts allowed in one burst before a cooldown. Resets on any clean turn. |
+| `baseDelayMs` | number | `2500` | First resume delay; doubles per attempt within a burst. |
+| `maxDelayMs` | number | `45000` | Cap on the per-attempt resume delay. |
+| `cooldownMs` | number | `60000` | First cooldown after a burst is used up. Doubles each burst. |
+| `maxCooldownMs` | number | `1800000` | Cap on the cooldown (30 min). |
+| `failureGraceMs` | number | `3000` | Wait after a terminal failure before nudging, so OpenCode's own retry can settle. |
+| `interruptGraceMs` | number | `1500` | Wait after a stall-interrupt before sending the continue prompt. |
+| `startTimeoutMs` | number | `20000` | If an accepted resume prompt produces no execution in this window, try again. |
+| `maxToolRunMs` | number | `3600000` | A tool running longer than this no longer blocks recovery. |
+| `maxRecoveryAgeMs` | number | `21600000` | Stop auto-recovering a session idle after failure longer than this (6 h). |
+| `forgetAfterMs` | number | `1800000` | Drop idle, healthy sessions from memory after this long. |
+| `nudgeText` | string | see below | Text sent to resume the session. |
+| `logFile` | string | — | Append a recovery log to this path (keep it **outside** any watched config folder). |
+| `debug` | boolean | `false` | Log every event and decision to the console. |
 
-Default continue prompt:
+Default nudge text:
 
 ```
-Continue from where you left off. If you were in the middle of a tool call, complete it. If you were thinking, finish your thought.
+Your previous response was interrupted by a timeout or stall. Continue exactly where you left off and finish the task. Do not restart or repeat work that is already done.
 ```
 
 ## How it works
 
-1. Every `checkIntervalMs`, the plugin calls `session.status()` on the OpenCode server, which returns live `idle` / `busy` / `retry` state for every session.
-2. It also listens for `session.status`, `message.*`, and tool events to refresh a per-session "last activity" timestamp.
-3. A session that stays `busy` with no activity longer than `timeoutMs` is considered stalled.
-4. The plugin sends `continuePrompt` through `session.prompt()` and starts the clock again.
-5. After `maxRetries`, it gives up on that episode and stays quiet — it re-arms once the session returns to `idle`.
+1. **Retry hook** — timeout-like provider errors (`rate limit`, `gateway`, `overloaded`, `socket hang up`, `408/499/504`, …) are made retryable inside OpenCode, while permanent errors (`400/401/403/404/422`, bad key, unknown model, context length) are left alone.
+2. **Failure recovery** — on a terminal `session.execution.failed` that looks timeout-like, the plugin waits `failureGraceMs` and then sends the nudge, unless the session already resumed itself. A provider `retryAfterMs` is honored as a cooldown.
+3. **Stall recovery** — a session that stays `busy` with no activity for `stallMs`, with no tool or permission pending, is interrupted and nudged.
+4. **Per-burst budget, never permanent** — after `maxNudges` attempts without a clean turn, the plugin enters a cooldown (`cooldownMs`, doubling up to `maxCooldownMs`) and then **tries again, forever**. A successful turn or a genuine user turn resets the burst.
+5. A resume prompt is only counted when it is actually delivered; a `session.prompt` that throws does not burn an attempt. The plugin re-checks `time.busy` vs `time.idle` before and after the delay so it never double-prompts a session that recovered on its own.
 
-Because it polls the server instead of relying only on events, it also detects sessions that were already busy before the plugin loaded.
+The event stream reconnects automatically with backoff, tool tracking has a TTL so a hung tool can't block recovery, and a process-global singleton prevents double-nudging if the plugin is loaded twice.
 
 ## Tuning
 
 For near-instant recovery:
 
 ```jsonc
-"options": { "timeoutMs": 5000, "checkIntervalMs": 2000 }
+"options": { "stallMs": 15000, "checkEveryMs": 2000 }
 ```
-
-Worst case: stall detected within `timeoutMs + checkIntervalMs`.
 
 Tips:
 
-- Keep your provider timeouts **longer** than `timeoutMs` so the plugin gets a chance to nudge the model before the transport gives up.
-- If your model legitimately pauses for long reasoning stretches, raise `timeoutMs` instead of disabling the plugin.
-- Enable `debug` and check the OpenCode log (`~/.local/share/opencode/log/opencode.log` on Windows) for `[auto-resume]` lines when tuning.
+- Keep your provider timeouts **longer** than `stallMs` so the plugin can nudge before the transport gives up.
+- If your model legitimately pauses for long reasoning stretches, raise `stallMs` instead of disabling the plugin.
+- Set `logFile` (outside any watched config folder) and read it to watch bursts and cooldowns, e.g. `resuming … (attempt 2/4, burst 1)`.
 
 ## Development
 

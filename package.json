@@ -1,7 +1,7 @@
 {
   "name": "opencode-auto-resume-lite",
-  "version": "1.0.0",
-  "description": "Minimal, dependency-free auto-resume watchdog for OpenCode: detects stalled sessions and sends a continue prompt automatically.",
+  "version": "2.0.0",
+  "description": "Minimal, dependency-free auto-resume watchdog for OpenCode V2: detects stalled or timed-out sessions and resumes them, with a per-burst budget and growing cooldown so it never permanently gives up.",
   "type": "module",
   "license": "MIT",
   "main": "dist/index.js",
